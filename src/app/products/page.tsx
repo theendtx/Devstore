@@ -16,12 +16,13 @@ type Product = {
 
 type ProductsResponse = {
   products: Product[];
+  total: number;
+  skip: number;
+  limit: number;
 };
 
 async function getProducts(): Promise<Product[]> {
-  const response = await fetch(
-    'https://dummyjson.com/products?limit=100'
-  );
+  const response = await fetch('https://dummyjson.com/products?limit=100');
 
   if (!response.ok) {
     throw new Error('Failed to load products');
@@ -31,11 +32,20 @@ async function getProducts(): Promise<Product[]> {
   return data.products;
 }
 
+const PAGE_SIZE = 10;
+
 export default function ProductsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const urlSearch = searchParams.get('search') ?? '';
+  const category = searchParams.get('category') ?? 'all';
+  const sort = searchParams.get('sort') ?? 'default';
+  const requestedPage = Number(searchParams.get('page') ?? '1');
+  const page = Number.isInteger(requestedPage) && requestedPage > 0
+    ? requestedPage
+    : 1;
+
   const [search, setSearch] = useState(urlSearch);
 
   const { data: products = [], isLoading, isError } = useQuery({
@@ -48,30 +58,92 @@ export default function ProductsPage() {
     setSearch(urlSearch);
   }, [urlSearch]);
 
-  // Жазу тоқтағаннан кейін 300 мс күту
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const params = new URLSearchParams(searchParams.toString());
+  // Іздеу мәтінін 300 мс өткен соң URL-ге жазу
+ 
 
-      if (search.trim()) {
-        params.set('search', search.trim());
-      } else {
-        params.delete('search');
-      }
+useEffect(() => {
+  const value = search.trim();
 
-      const query = params.toString();
-      const nextUrl = query ? `/products?${query}` : '/products';
+  if (value === urlSearch) return;
 
-      if (nextUrl !== `/products?${searchParams.toString()}`) {
-        router.replace(nextUrl, { scroll: false });
-      }
-    }, 300);
+  const timer = setTimeout(() => {
+    const params = new URLSearchParams(window.location.search);
 
-    return () => clearTimeout(timer);
-  }, [search, router, searchParams]);
+    if (value) {
+      params.set('search', value);
+    } else {
+      params.delete('search');
+    }
 
-  const filteredProducts = products.filter((product) =>
-    product.title.toLowerCase().includes(urlSearch.toLowerCase())
+    params.delete('page');
+
+    const query = params.toString();
+
+    router.replace(query ? `/products?${query}` : '/products', {
+      scroll: false,
+    });
+  }, 300);
+
+  return () => clearTimeout(timer);
+}, [search, urlSearch, router]);
+
+
+ function updateParam(key: string, value: string) {
+  const params = new URLSearchParams(searchParams.toString());
+
+  if (value && value !== 'all' && value !== 'default') {
+    params.set(key, value);
+  } else {
+    params.delete(key);
+  }
+
+  // Категория немесе сұрыптау өзгерсе, бірінші бетке қайту
+  if (key !== 'page') {
+    params.delete('page');
+  }
+
+  const query = params.toString();
+
+  router.push(query ? `/products?${query}` : '/products', {
+    scroll: false,
+  });
+}
+
+  const categories = [...new Set(products.map((product) => product.category))];
+
+  // 1. Іздеу
+  let filteredProducts = products.filter((product) =>
+    product.title.toLowerCase().includes(urlSearch.trim().toLowerCase())
+  );
+
+  // 2. Категория бойынша сүзу
+  if (category !== 'all') {
+    filteredProducts = filteredProducts.filter(
+      (product) => product.category === category
+    );
+  }
+
+  // 3. Баға бойынша сұрыптау
+  if (sort === 'price-asc') {
+    filteredProducts.sort((a, b) => a.price - b.price);
+  } else if (sort === 'price-desc') {
+    filteredProducts.sort((a, b) => b.price - a.price);
+  } else if (sort === 'title-asc') {
+    filteredProducts.sort((a, b) => a.title.localeCompare(b.title));
+  }
+
+  // 4. Pagination
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredProducts.length / PAGE_SIZE)
+  );
+
+  const currentPage = Math.min(page, totalPages);
+  const startIndex = (currentPage - 1) * PAGE_SIZE;
+
+  const visibleProducts = filteredProducts.slice(
+    startIndex,
+    startIndex + PAGE_SIZE
   );
 
   if (isLoading) return <p>Loading products...</p>;
@@ -87,12 +159,34 @@ export default function ProductsPage() {
         placeholder="Search products..."
       />
 
+      <select
+        value={category}
+        onChange={(event) => updateParam('category', event.target.value)}
+      >
+        <option value="all">All categories</option>
+        {categories.map((item) => (
+          <option key={item} value={item}>
+            {item}
+          </option>
+        ))}
+      </select>
+
+      <select
+        value={sort}
+        onChange={(event) => updateParam('sort', event.target.value)}
+      >
+        <option value="default">Default order</option>
+        <option value="price-asc">Price: low to high</option>
+        <option value="price-desc">Price: high to low</option>
+        <option value="title-asc">Name: A–Z</option>
+      </select>
+
       <p>Found: {filteredProducts.length}</p>
 
-      {filteredProducts.length === 0 ? (
+      {visibleProducts.length === 0 ? (
         <p>No products found.</p>
       ) : (
-        filteredProducts.map((product) => (
+        visibleProducts.map((product) => (
           <div key={product.id}>
             <Link href={`/products/${product.id}`}>
               <h2>{product.title}</h2>
@@ -101,6 +195,24 @@ export default function ProductsPage() {
           </div>
         ))
       )}
+
+      <div>
+  <button
+    disabled={currentPage <= 1}
+    onClick={() => updateParam('page', String(currentPage - 1))}
+  >
+    Previous
+  </button>
+
+  <span> Page {currentPage} of {totalPages} </span>
+
+  <button
+    disabled={currentPage >= totalPages}
+    onClick={() => updateParam('page', String(currentPage + 1))}
+  >
+    Next
+  </button>
+</div>
     </main>
   );
 }
