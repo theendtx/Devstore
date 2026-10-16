@@ -3,6 +3,8 @@
 
 import Link from 'next/link';
 import { useQuery } from '@tanstack/react-query';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
 
 type Product = {
   id: number;
@@ -14,14 +16,11 @@ type Product = {
 
 type ProductsResponse = {
   products: Product[];
-  total: number;
-  skip: number;
-  limit: number;
 };
 
 async function getProducts(): Promise<Product[]> {
   const response = await fetch(
-    'https://dummyjson.com/products?limit=20'
+    'https://dummyjson.com/products?limit=100'
   );
 
   if (!response.ok) {
@@ -29,70 +28,75 @@ async function getProducts(): Promise<Product[]> {
   }
 
   const data: ProductsResponse = await response.json();
-
   return data.products;
 }
 
 export default function ProductsPage() {
-  const {
-    data: products,
-    isLoading,
-    isError,
-    error,
-    refetch,
-    isFetching,
-  } = useQuery({
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const urlSearch = searchParams.get('search') ?? '';
+  const [search, setSearch] = useState(urlSearch);
+
+  const { data: products = [], isLoading, isError } = useQuery({
     queryKey: ['products'],
     queryFn: getProducts,
   });
 
-  if (isLoading) {
-    return (
-      <main>
-        <h1>Products</h1>
-        <p>Loading products...</p>
-      </main>
-    );
-  }
+  // URL өзгерсе, іздеу өрісін синхрондау
+  useEffect(() => {
+    setSearch(urlSearch);
+  }, [urlSearch]);
 
-  if (isError) {
-    return (
-      <main>
-        <h1>Products</h1>
-        <p>{error.message}</p>
-        <button onClick={() => refetch()}>
-          Try again
-        </button>
-      </main>
-    );
-  }
+  // Жазу тоқтағаннан кейін 300 мс күту
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+
+      if (search.trim()) {
+        params.set('search', search.trim());
+      } else {
+        params.delete('search');
+      }
+
+      const query = params.toString();
+      const nextUrl = query ? `/products?${query}` : '/products';
+
+      if (nextUrl !== `/products?${searchParams.toString()}`) {
+        router.replace(nextUrl, { scroll: false });
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [search, router, searchParams]);
+
+  const filteredProducts = products.filter((product) =>
+    product.title.toLowerCase().includes(urlSearch.toLowerCase())
+  );
+
+  if (isLoading) return <p>Loading products...</p>;
+  if (isError) return <p>Failed to load products.</p>;
 
   return (
     <main>
       <h1>Products</h1>
 
-      <button
-        onClick={() => refetch()}
-        disabled={isFetching}
-      >
-        {isFetching ? 'Refreshing...' : 'Refresh products'}
-      </button>
+      <input
+        value={search}
+        onChange={(event) => setSearch(event.target.value)}
+        placeholder="Search products..."
+      />
 
-      {(products ?? []).length === 0 ? (
+      <p>Found: {filteredProducts.length}</p>
+
+      {filteredProducts.length === 0 ? (
         <p>No products found.</p>
       ) : (
-        (products ?? []).map((product) => (
+        filteredProducts.map((product) => (
           <div key={product.id}>
             <Link href={`/products/${product.id}`}>
-              <img
-                src={product.thumbnail}
-                alt={product.title}
-                width={100}
-                height={100}
-              />
               <h2>{product.title}</h2>
-              <p>Price: ${product.price}</p>
-              <p>Category: {product.category}</p>
+              <p>${product.price}</p>
             </Link>
           </div>
         ))
