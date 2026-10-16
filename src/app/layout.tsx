@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import Link from 'next/link';
+import Providers from './providers';
 
 export const metadata: Metadata = {
   title: 'DevStore',
@@ -25,7 +26,9 @@ export default function RootLayout({
     <Link href="/about">About</Link>
   </nav>
 </header>
-        {children}
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );

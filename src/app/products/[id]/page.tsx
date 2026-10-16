@@ -2,11 +2,14 @@ export const instant = false;
 
 import AddToCartButton from './AddToCartButton';
 import FavoriteButton from './FavoriteButton';
+import { notFound } from 'next/navigation';
+
 
 type Product = {
   id: number;
   title: string;
   price: number;
+  category: string;
 };
 
 type ProductPageProps = {
@@ -19,22 +22,35 @@ export default async function ProductPage({
   const { id } = await params;
 
   const response = await fetch(
-    `https://dummyjson.com/products/${id}`,
-  );
+  'http://localhost:3000/api/products',
+);
+
+  if (response.status === 404) {
+  notFound();
+}
 
   if (!response.ok) {
     throw new Error(`API error: ${response.status}`);
   }
 
-  const product: Product = await response.json();
+  const products: Product[] = await response.json();
+
+const product = products.find(
+  (item) => item.id === Number(id),
+);
+
+if (!product) {
+  notFound();
+}
 
   return (
     <main>
       <h1>{product.title}</h1>
       <p>Price: ${product.price}</p>
-<FavoriteButton />
-<br></br>
-<AddToCartButton productName={product.title} />
+      <p>Category: {product.category}</p>
+      <FavoriteButton />
+      <br />
+      <AddToCartButton productName={product.title} />
     </main>
   );
 }
